@@ -182,6 +182,8 @@ const telegramAuth = async (req, res, next) => {
 // The /api/auth/telegram route itself needs the middleware to process the login
 app.use("/api/auth", limiter, telegramAuth, require("./routes/auth")); // Apply middleware here for the login route
 app.use("/api/users", limiter, telegramAuth, require("./routes/users"));
+app.use("/api/coins", limiter, telegramAuth, require("./routes/coins"));
+app.use("/api/withdrawals", limiter, telegramAuth, require("./routes/withdrawals"));
 app.use("/api/progress", limiter, telegramAuth, require("./routes/progress"));
 app.use("/api/ads", limiter, telegramAuth, require("./routes/ads"));
 

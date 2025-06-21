@@ -5,6 +5,8 @@ const jwt = require("jsonwebtoken");
 // This route will be protected by the telegramAuth middleware defined in index.js
 // The middleware verifies the initData, finds/creates the user, generates a JWT,
 // and attaches user info and the token to the request object (req.user, req.token).
+// NOTE: The telegramAuth middleware must attach req.user (user object) and req.token (JWT) to the request.
+// This route simply returns them to the frontend.
 router.post("/telegram", (req, res) => {
   // The telegramAuth middleware should have already run and attached user/token
   if (req.user && req.token) {

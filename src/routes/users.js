@@ -5,22 +5,22 @@ const supabase = require("../config/supabase");
 // Note: The 'telegramAuth' middleware applied in index.js already verifies the user
 // and attaches the user object from Supabase to req.user.
 
-// Get user profile
+// Get user profile with friends/referrals
 router.get("/profile", async (req, res, next) => {
   try {
-    // req.user is attached by the telegramAuth middleware
-    if (!req.user || !req.user.id) {
+    if (!req.user || !req.userId) {
       return res.status(401).json({ message: "User not authenticated or user ID missing." });
     }
-
-    // The user object attached might already contain all necessary profile info.
-    // If not, you could re-fetch, but usually, the middleware provides it.
-    // For simplicity, we return the user object attached by the middleware.
-    res.json(req.user);
-
+    // Fetch user from Supabase
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.userId).single();
+    // Fetch friends/referrals
+    const { data: friends } = await supabase
+      .from('users')
+      .select('id, username, level, created_at, balance')
+      .eq('referred_by', user.referral_code);
+    res.json({ ...user, friends: friends || [] });
   } catch (error) {
-    console.error("Error fetching user profile:", error);
-    next(error); // Pass error to the central error handler
+    next(error);
   }
 });
 
