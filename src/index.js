@@ -57,12 +57,35 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // Middleware
 app.use(cors({
-  origin: ['https://frontend-uzy8.onrender.com', 'https://t.me/alphawulf_bot'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Telegram WebApp)
+    if (!origin) return callback(null, true);
+    
+    // Only allow Telegram origins and your deployed frontend
+    const allowedOrigins = [
+      'https://frontend-uzy8.onrender.com',
+      'https://t.me',
+      'https://web.telegram.org'
+    ];
+    
+    // Check if origin is allowed or if it's a Telegram WebApp request
+    if (allowedOrigins.some(allowed => origin.includes(allowed)) || 
+        origin.includes('telegram')) {
+      return callback(null, true);
+    }
+    
+    // Reject other origins
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-telegram-init-data'],
   credentials: true
 }));
 app.use(express.json());
+
+// Add browser detection middleware before serving static files
+const detectBrowser = require('./middleware/browserDetection');
+app.use(detectBrowser);
 
 // Serve static files from the React app build directory
 app.use(express.static(path.join(__dirname, "../../frontend/build")));
@@ -110,17 +133,36 @@ app.get("/health", (req, res) => {
 const telegramAuth = async (req, res, next) => {
   try {
     const initData = req.headers["x-telegram-init-data"];
+    const userAgent = req.get('User-Agent') || '';
+    
+    // Strict Telegram validation
     if (!initData) {
-      return res.status(401).json({ error: "No Telegram data provided" });
+      return res.status(401).json({ 
+        error: "No Telegram data provided. This app is only accessible through Telegram." 
+      });
     }
+
+    // Additional check for Telegram user agent (optional but recommended)
+    const isTelegramUA = userAgent.includes('TelegramBot') || 
+                        userAgent.includes('Telegram') ||
+                        req.headers['x-telegram-bot-api-secret-token'];
 
     // Verify Telegram Web App data using the bot service
     const validationResult = await telegramBotService.verifyTelegramData(initData);
     if (!validationResult || !validationResult.user) {
       console.error("Telegram data verification failed:", validationResult);
-      return res.status(401).json({ error: "Invalid Telegram data" });
+      return res.status(401).json({ 
+        error: "Invalid Telegram data. Please restart the app from Telegram." 
+      });
     }
     const telegramUser = validationResult.user;
+
+    // Ensure we have a valid Telegram user ID
+    if (!telegramUser.id || typeof telegramUser.id !== 'number') {
+      return res.status(401).json({ 
+        error: "Invalid Telegram user data." 
+      });
+    }
 
     // Get or create user in Supabase
     const { data: existingUser, error: userError } = await supabase
@@ -141,9 +183,9 @@ const telegramAuth = async (req, res, next) => {
         .from("users")
         .insert([{
           telegram_id: telegramUser.id,
-          username: telegramUser.username,
-          first_name: telegramUser.first_name,
-          last_name: telegramUser.last_name,
+          username: telegramUser.username || null,
+          first_name: telegramUser.first_name || null,
+          last_name: telegramUser.last_name || null,
           balance: 0,
           level: "Alpha Pup",
           level_points: 0,
@@ -162,10 +204,14 @@ const telegramAuth = async (req, res, next) => {
       appUser = existingUser;
     }
 
-    // Generate JWT token
+    // Generate JWT token with more secure payload
     const token = jwt.sign(
-      { userId: appUser.id, telegramId: appUser.telegram_id },
-      process.env.JWT_SECRET,
+      { 
+        userId: appUser.id, 
+        telegramId: appUser.telegram_id,
+        iat: Math.floor(Date.now() / 1000)
+      },
+      process.env.JWT_SECRET || 'your_jwt_secret_key_here',
       { expiresIn: "7d" }
     );
 
@@ -174,7 +220,9 @@ const telegramAuth = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Authentication middleware error:", error);
-    res.status(401).json({ error: "Authentication failed" });
+    res.status(401).json({ 
+      error: "Authentication failed. Please restart the app from Telegram." 
+    });
   }
 };
 
